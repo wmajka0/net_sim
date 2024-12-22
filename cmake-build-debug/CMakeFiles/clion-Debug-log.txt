@@ -1,0 +1,5 @@
+"E:\cLEW\CLion 2023.3\bin\cmake\win\x64\bin\cmake.exe" -DCMAKE_BUILD_TYPE=Debug "-DCMAKE_MAKE_PROGRAM=E:/cLEW/CLion 2023.3/bin/ninja/win/x64/ninja.exe" -G Ninja -S E:\cLEW\CLionProjects\MOJEZ_NET_SIM -B E:\cLEW\CLionProjects\MOJEZ_NET_SIM\cmake-build-debug
+-- Found Python3: C:/Users/Wiktor Majka/AppData/Local/Programs/Python/Python312/python.exe (found version "3.12.0") found components: Interpreter 
+-- Configuring done (1.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: E:/cLEW/CLionProjects/MOJEZ_NET_SIM/cmake-build-debug
