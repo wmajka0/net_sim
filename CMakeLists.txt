@@ -8,10 +8,14 @@ include_directories(include)
 set(SOURCE_FILES
         src/package.cpp
         src/storage_types.cpp
+        src/nodes.cpp
 )
 
 set(SOURCES_FILES_TESTS
         test/test.cpp
+        include/nodes.h
+        src/helpers.cpp
+        src/nodes.cpp
 
 )
 if(EXISTS ${PROJECT_SOURCE_DIR}/test)
@@ -22,7 +26,7 @@ if(EXISTS ${PROJECT_SOURCE_DIR}/test)
 
     # Przyjmij, że główny katalog z plikami frameworku GTF znajduje się
     # dwa katalogi wyżej względem katalogu projektu.
-    set(GTEST_ROOT ../googletest-master)
+    set(GTEST_ROOT ../googletest-1.15.2)
 
     # Dodaj katalogi z plikami nagłówkowymi GTF.
     target_include_directories(${EXEC_TEST} PUBLIC
