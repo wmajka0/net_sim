@@ -64,7 +64,7 @@ protected:
 class Worker: public PackageSender, public IPackageReceiver // przetwarzają półprodukty od ramp
 {
 public:
-    Worker(ElementID id, TimeOffset pd, std::unique_ptr<PackageQueue> q) : PackageSender(), id_{id}, time_{pd},queue_{std::move(q)} {}
+    Worker(ElementID id, TimeOffset pd, std::unique_ptr<PackageQueue> q) : PackageSender(), id_{id}, time_{pd},queue_{std::move(q)} {} // pracownicy przyjmują preferencje stałą na typ FIFO
     void do_work(Time t); //argument to bierzący czas symulacji robotnik ma go zapamiętać by wiedzieć kiedy rozpoczął przetwarzanie i kiedy skończyć na podstawie "pd" reprezentującego czas przetwarzania produktu
     TimeOffset get_processing_duration() const {return time_;}
     Time get_package_processing_start_time() const {return time_this_package_;}
@@ -105,7 +105,7 @@ private:
 class Storagehouse: public IPackageReceiver // przechowują półprodukty wykonane przez robotników
 {
 public:
-    Storagehouse(ElementID id, std::unique_ptr<IPackageStockpile> d = std::make_unique<PackageQueue>(PackageQueueType::FIFO)): id{id}, queue_{std::move(d)} {} // pracownicy przyjmują preferencje stałą na typ FIFO
+    Storagehouse(ElementID id, std::unique_ptr<IPackageStockpile> d = std::make_unique<PackageQueue>(PackageQueueType::FIFO)): id{id}, queue_{std::move(d)} {}
     IPackageStockpile::const_iterator begin() const override {return queue_->begin();}
     IPackageStockpile::const_iterator cbegin() const override {return queue_->cbegin();}
     IPackageStockpile::const_iterator end() const override {return  queue_->end();}
@@ -119,4 +119,6 @@ private:
     ElementID id;
     std::unique_ptr<IPackageStockpile> queue_; //  referencja do magazynu z półproduktami
 };
+
+
 #endif //NODES_H
