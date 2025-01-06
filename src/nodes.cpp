@@ -1,13 +1,17 @@
 #include "nodes.h"
 
-using ReceiverWeightPair = std::pair<IPackageReceiver* const, double>;
+using ReceiverPair = std::pair<IPackageReceiver* const, double>;
 
-void ReceiverPreferences::add_receiver(IPackageReceiver* receiver) {
-    double total_weight = 0.0;
-    for (const auto& entry : preferences_) {
-        total_weight += entry.second;
+void ReceiverPreferences::add_receiver(IPackageReceiver* r) {
+    auto num_of_receivers = preferences_.size();
+    if (num_of_receivers == 0) preferences_[r] = 1.;
+    else {
+        auto denominator = static_cast<double>(num_of_receivers + 1);
+        std::for_each(preferences_.begin(), preferences_.end(), [=](ReceiverPair& receiver) {
+            receiver.second = 1 / denominator;
+        });
+        preferences_[r] = 1. / denominator;
     }
-    preferences_[receiver] = 1.0 - total_weight;
 }
 
 void ReceiverPreferences::remove_receiver(IPackageReceiver* receiver) {

@@ -10,7 +10,7 @@
 #include "package.h"
 #include "storage_types.h"
 #include "types.h"
-#include "helpers.hpp"
+#include "helpers.h"
 
 enum class ReceiverType {
     WORKER, STOREHOUSE
@@ -36,7 +36,7 @@ public:
 class ReceiverPreferences
 {
 
-    public:
+public:
     using preferences_t = std::map<IPackageReceiver*, double>;
     using const_iterator = preferences_t::const_iterator;
 
