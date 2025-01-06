@@ -102,10 +102,10 @@ private:
 };
 
 
-class Storagehouse: public IPackageReceiver // przechowują półprodukty wykonane przez robotników
+class Storehouse: public IPackageReceiver // przechowują półprodukty wykonane przez robotników
 {
 public:
-    Storagehouse(ElementID id, std::unique_ptr<IPackageStockpile> d = std::make_unique<PackageQueue>(PackageQueueType::FIFO)): id{id}, queue_{std::move(d)} {}
+    Storehouse(ElementID id, std::unique_ptr<IPackageStockpile> d = std::make_unique<PackageQueue>(PackageQueueType::FIFO)): id{id}, queue_{std::move(d)} {}
     IPackageStockpile::const_iterator begin() const override {return queue_->begin();}
     IPackageStockpile::const_iterator cbegin() const override {return queue_->cbegin();}
     IPackageStockpile::const_iterator end() const override {return  queue_->end();}
