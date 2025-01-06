@@ -1,12 +1,8 @@
-//
-// Created by Karol on 26.12.2024.
-//
-
 #include "nodes.h"
 
 using ReceiverWeightPair = std::pair<IPackageReceiver* const, double>;
 
-void ReceiverPrefences::add_receiver(IPackageReceiver* receiver) {
+void ReceiverPreferences::add_receiver(IPackageReceiver* receiver) {
     double total_weight = 0.0;
     for (const auto& entry : preferences_) {
         total_weight += entry.second;
@@ -14,7 +10,7 @@ void ReceiverPrefences::add_receiver(IPackageReceiver* receiver) {
     preferences_[receiver] = 1.0 - total_weight;
 }
 
-void ReceiverPrefences::remove_receiver(IPackageReceiver* receiver) {
+void ReceiverPreferences::remove_receiver(IPackageReceiver* receiver) {
     auto it = preferences_.find(receiver);
     if (it == preferences_.end()) return;
 
@@ -33,13 +29,16 @@ void Storehouse::receive_package(Package&& package) {
     queue_->push(std::move(package));
 }
 
-IPackageReceiver* ReceiverPrefences::choose_receiver() {
-    double random_value = default_probability_generator();
+IPackageReceiver* ReceiverPreferences::choose_receiver() {
+    double random_value = generated_prob_();
     if (random_value < 0.0 || random_value > 1.0) return nullptr;
 
     double cumulative_weight = 0.0;
     for (const auto& entry : preferences_) {
         cumulative_weight += entry.second;
+        if (cumulative_weight < 0 || cumulative_weight > 1){
+            return nullptr;
+        }
         if (random_value <= cumulative_weight) {
             return entry.first;
         }
