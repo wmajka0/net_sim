@@ -1,317 +1,260 @@
+
 #include "factory.hxx"
-#include "nodes.hxx"
-
-bool has_reachable_storehouse(const PackageSender* sender, std::map<const PackageSender*, NodeColor>& node_colors) {
-    if (node_colors[sender] == NodeColor::VERIFIED) {
-        return true;
-    }
-
-    node_colors[sender] = NodeColor::VISITED;
-
-    if (sender->receiver_preferences_.get_preferences().empty()) {
-        throw std::logic_error("Sender does not have any receivers");
-    }
-
-    for (const auto& receiver : sender->receiver_preferences_.get_preferences()) {
-        if (receiver.first->get_receiver_type() == ReceiverType::STOREHOUSE) {
-            return true;
-        } else if (receiver.first->get_receiver_type() == ReceiverType::WORKER) {
-            PackageSender* sendrecv_ptr = dynamic_cast<PackageSender*>(dynamic_cast<class Worker*>(receiver.first));
-
-            if (sendrecv_ptr == sender) {
-                continue;
-            }
-
-            if (node_colors[sendrecv_ptr] == NodeColor::UNVISITED && has_reachable_storehouse(sendrecv_ptr, node_colors)) {
-                return true;
-            }
-        }
-    }
-
-    node_colors[sender] = NodeColor::VERIFIED;
-    throw std::logic_error("Error");
-}
-
-void Factory::remove_worker(ElementID id){
-    Worker* node = &(*cont_w.find_by_id(id));
-
-    std::for_each(cont_w.begin(), cont_w.end(), [node](Worker& worker) {
-        worker.receiver_preferences_.remove_receiver(node);
-    });
-
-    std::for_each(cont_r.begin(), cont_r.end(), [node](Ramp& ramp) {
-        ramp.receiver_preferences_.remove_receiver(node);
-    });
-
-    cont_w.remove_by_id(id);
-}
-
-void Factory::remove_storehouse(ElementID id)
-{
-    Storehouse* node = &(*cont_s.find_by_id(id));
-    std::for_each(cont_w.begin(), cont_w.end(), [&node](Worker& ramp) {
-        ramp.receiver_preferences_.remove_receiver(node);
-    });
-
-    std::for_each(cont_w.begin(), cont_w.end(), [&node](Worker& worker) {
-        worker.receiver_preferences_.remove_receiver(node);
-    });
-    cont_s.remove_by_id(id);
-}
+#include <istream>
+#include <string>
+#include <sstream>
 
 void Factory::do_deliveries(Time t) {
-    for (auto &ramp : cont_r)
-        ramp.deliver_goods(t);
+    for (auto & ramp_from_collection : collection_ramps_){
+        ramp_from_collection.deliver_goods(t);
+    }
 }
 
-void Factory::do_work(Time t ) {
-    for (auto& worker : cont_w)
-        worker.do_work(t);
+void Factory::do_work(Time t) {
+    for (auto & worker_from_collection : collection_workers_){
+        worker_from_collection.do_work(t);
+    }
 }
 
 void Factory::do_package_passing() {
-    for (auto &ramp : cont_r)
-        ramp.send_package();
-
-    for (auto &worker : cont_w)
-        worker.send_package();
-}
-
-bool Factory::is_consistent() const {
-    std::map<const PackageSender*, NodeColor> kolor;
-
-    auto set_unvisited_colors = [&kolor](const auto& container) {
-        for (const auto& item : container) {
-            const PackageSender* sender = dynamic_cast<const PackageSender*>(&item);
-            kolor[sender] = NodeColor::UNVISITED;
-        }
-    };
-
-    set_unvisited_colors(cont_w);
-    set_unvisited_colors(cont_r);
-
-    try {
-        for (const auto& ramp : cont_r) {
-            const PackageSender* sender = dynamic_cast<const PackageSender*>(&ramp);
-            has_reachable_storehouse(sender, kolor);
-        }
-    } catch (const std::logic_error&) {
-        return false;
+    for(auto & ramp_from_collection: collection_ramps_){
+        ramp_from_collection.send_package();
     }
-
-    return true;
-}
-
-std::vector<std::string> character_split(const std::string& splittable_str, char delimiter) {
-    std::stringstream parameter_stream(splittable_str);
-    std::string part;
-    std::vector<std::string> result;
-
-    while(std::getline(parameter_stream, part, delimiter)) {
-        result.push_back(part);
+    for(auto & worker_from_collection : collection_workers_){
+        worker_from_collection.send_package();
     }
-
-    return result;
 }
 
-ParsedLineData parse_line(std::string& line) {
-    // rozłóż linię na ID określający typ elementu oraz tokeny "klucz=wartość"
-    // każdy token rozłóż na parę (klucz, wartość)
-    // na podstawie ID oraz par (klucz, wartość) zwróć odpowiedni obiekt typu ParsedLineData
+
+
+
+bool Factory::is_consistent()
+{
+    std::map<PackageSender*,State> nodes_state_map;
+    for (auto & ramp : collection_ramps_)
+    {
+        nodes_state_map.insert(std::pair<PackageSender*,State>(&ramp, State::UNVISITED));
+    }
+    for (auto & worker : collection_workers_)
+    {
+        nodes_state_map.insert(std::pair<PackageSender*,State>(&worker, State::UNVISITED));
+    }
+    bool consistent = false;
+    for (auto & ramp : collection_ramps_)
+    {
+        try
+        {
+            consistent = is_receiver_connected_to_storehouse(&ramp, nodes_state_map);
+        }
+        catch (std::logic_error &)
+        {
+            return false;
+        }
+    }
+    return consistent;
+}
+
+
+bool Factory::is_receiver_connected_to_storehouse(PackageSender* sender, std::map<PackageSender*,State> map)
+{
+    if (map.at(sender) == State::VERYFIED)
+        return true;
+    map.at(sender) = State::VISITED;
+
+    if (sender->receiver_preferences_.preferences_.empty())
+        throw std::logic_error("Error");
+
+    bool sender_has_at_least_one_reciever = false;
+    for (auto pair : sender->receiver_preferences_.preferences_)
+    {
+        IPackageReceiver* reciver = pair.first;
+        if (reciver->get_receiver_type() == ReceiverType::STOREHOUSE)
+            sender_has_at_least_one_reciever = true;
+        else
+        {
+            IPackageReceiver* receiver_ptr = reciver;
+            auto worker_ptr = dynamic_cast<Worker*>(receiver_ptr);
+            auto sendrecv_ptr = dynamic_cast<PackageSender*>(worker_ptr);
+
+            if (sendrecv_ptr == sender)
+                break;
+            sender_has_at_least_one_reciever = true;
+            if (map.at(sendrecv_ptr) == State::UNVISITED)
+                is_receiver_connected_to_storehouse(sendrecv_ptr, map);
+        }
+    }
+    map.at(sender) = State::VERYFIED;
+
+    if (sender_has_at_least_one_reciever)
+        return true;
+    else
+        throw std::logic_error("Error");
+}
+
+ParsedLineData parse_line(const std::string& line) {
+    ParsedLineData new_parsed_line_data;
     std::vector<std::string> tokens;
     std::string token;
-
-    std::istringstream token_stream(line);
     char delimiter = ' ';
-
-   
-
+    std::istringstream token_stream(line);
     while (std::getline(token_stream, token, delimiter))
         tokens.push_back(token);
 
-    ParsedLineData parsed_data;
+    new_parsed_line_data.element_type = ElementTypeMap.at(tokens.front());
+    tokens.erase(tokens.begin()); //Pozostawia same pary klucz-wartosc w wektorze tokens
 
-    std::map<std::string, ElementType> element_types{
-            {"LOADING_RAMP", ElementType::RAMP},
-            {"WORKER", ElementType::WORKER},
-            {"STOREHOUSE", ElementType::STOREHOUSE},
-            {"LINK", ElementType::LINK},
-    };
+    for (std::string& single_token : tokens) {
+        std::vector<std::string> all_two_values_from_token;
+        std::string single_value_from_token;
+        char delimiter2 = '=';
+        std::istringstream token_stream2(single_token);
+        while (std::getline(token_stream2,single_value_from_token, delimiter2))
+            all_two_values_from_token.push_back(single_value_from_token);
 
-    try {
-        parsed_data.element_type = element_types.at(tokens[0]);
-
-        std::for_each(std::next(tokens.cbegin()), tokens.cend(), [&](const std::string& parameter_str) {
-            auto key_value = character_split(parameter_str, '=');
-            parsed_data.parameters[key_value[0]] = key_value[1];
-        });
-    } catch (std::out_of_range& ex) {
-        throw std::exception();
+        auto pair_from_token = std::make_pair(all_two_values_from_token[0],all_two_values_from_token[1]);
+        new_parsed_line_data.parameters.insert(pair_from_token);
     }
-
-    return parsed_data;
+    return new_parsed_line_data;
 }
 
-PackageQueueType get_package_queue_type(std::string& package_queue_type_str) {
-    std::map<std::string, PackageQueueType> str_type_map{
-            {"LIFO", PackageQueueType::LIFO},
-            {"FIFO", PackageQueueType::FIFO}
-    };
 
-    return str_type_map.at(package_queue_type_str);
-}
-
-void link(Factory& factory, const std::map<std::string, std::string>& parameters) {
-    enum class NodeType {
-        RAMP, WORKER, STORE
-    };
-
-    std::map<std::string, NodeType> str_node_type{
-            {"ramp", NodeType::RAMP},
-            {"worker", NodeType::WORKER},
-            {"store", NodeType::STORE}
-    };
-
-    std::string src_str = parameters.at("src");
-    std::string dest_str = parameters.at("dest");
-
-    auto src_param = character_split(src_str, '-');
-    NodeType src_node_t = str_node_type.at(src_param[0]);
-    ElementID src_node_id = std::stoi(src_param[1]);
-
-    auto dest_param = character_split(dest_str, '-');
-    NodeType dest_node_t = str_node_type.at(dest_param[0]);
-    ElementID dest_node_id = std::stoi(dest_param[1]);
-
-    IPackageReceiver* package_receiver = nullptr;
-
-    switch(dest_node_t) {
-        case NodeType::RAMP:
-            break;
-        case NodeType::WORKER:
-            package_receiver = &*factory.find_worker_by_id(dest_node_id);
-            break;
-        case NodeType::STORE: {
-            package_receiver = &*factory.find_storehouse_by_id(dest_node_id);
-            break;
-        }
-    }
-
-    switch(src_node_t) {
-        case NodeType::RAMP: {
-            factory.find_ramp_by_id(src_node_id)->receiver_preferences_.add_receiver(package_receiver);
-            break;
-        }
-        case NodeType::WORKER: {
-            factory.find_worker_by_id(src_node_id)->receiver_preferences_.add_receiver(package_receiver);
-            break;
-        }
-        case NodeType::STORE:
-            break;
-    }
-}
-
-Factory load_factory_structure(std::istream& is) {
-   
-
-    Factory factory;
-
+Factory load_factory_structure(std::istream& is){
+    Factory new_factory;
     std::string line;
-
+    std::vector<ParsedLineData> parsed_line_data_collection;
+    ParsedLineData parsed_line_data;
     while (std::getline(is, line)) {
-        if (line.empty() || line[0] == ';')
+        if (line.empty() or line.front() == ';')
             continue;
+        try {
+            parsed_line_data = parse_line(line);
+        } catch (std::out_of_range &) {
+            continue;
+        }
+        parsed_line_data_collection.push_back(parsed_line_data);
+    }
 
-        ParsedLineData parsed = parse_line(line);
 
-        switch(parsed.element_type) {
-            case ElementType::RAMP: {
-                ElementID element_id = std::stoi(parsed.parameters.at("id"));
-                TimeOffset delivery_interval = std::stoi(parsed.parameters.at("delivery-interval"));
-                Ramp ramp(element_id, delivery_interval);
-
-                factory.add_ramp(std::move(ramp));
+    for (ParsedLineData& single_line_data : parsed_line_data_collection){
+        switch (single_line_data.element_type){
+            case ElementType::LOADING_RAMP: {
+                ElementID id = static_cast<ElementID>(std::stoi(single_line_data.parameters.at("id")));
+                TimeOffset di = static_cast<TimeOffset>(std::stoi(single_line_data.parameters.at("delivery-interval")));
+                new_factory.add_ramp(Ramp(id, di));
                 break;
             }
             case ElementType::WORKER: {
-                ElementID element_id = std::stoi(parsed.parameters.at("id"));
-                TimeOffset processing_time = std::stoi(parsed.parameters.at("processing-time"));
-                PackageQueueType package_queue_t = get_package_queue_type(parsed.parameters.at("queue-type"));
-                Worker worker(element_id, processing_time, std::make_unique<PackageQueue>(package_queue_t));
-
-                factory.add_worker(std::move(worker));
+                ElementID id = static_cast<ElementID>(std::stoi(single_line_data.parameters.at("id")));
+                TimeOffset pt = static_cast<TimeOffset>(std::stoi(single_line_data.parameters.at("processing-time")));
+                std::string string_queue_type= single_line_data.parameters.at("queue-type");
+                PackageQueueType queue_type = QueueTypeMap.at(string_queue_type);
+                new_factory.add_worker(Worker(id,pt,std::make_unique<PackageQueue>(queue_type)));
                 break;
             }
             case ElementType::STOREHOUSE: {
-                ElementID element_id = std::stoi(parsed.parameters.at("id"));
-                Storehouse storehouse(element_id);
-
-                factory.add_storehouse(std::move(storehouse));
+                ElementID id = static_cast<ElementID>(std::stoi(single_line_data.parameters.at("id")));
+                new_factory.add_storehouse(Storehouse(id));
                 break;
             }
             case ElementType::LINK: {
-                link(factory, parsed.parameters);
-                break;
+                std::string src = single_line_data.parameters.at("src");
+                std::string dest = single_line_data.parameters.at("dest");
+                std::istringstream src_stream(src);
+                std::istringstream dest_stream(dest);
+                std::vector<std::string> src_vector;
+                std::vector<std::string> dest_vector;
+                char delimiter = '-';
+                std::string parsing_temp;
+                while (getline(src_stream, parsing_temp, delimiter))
+                    src_vector.push_back(parsing_temp);
+                while (getline(dest_stream, parsing_temp, delimiter))
+                    dest_vector.push_back(parsing_temp);
+                NodeType src_type = NodeTypeMap.at(src_vector[0]);
+                NodeType dest_type = NodeTypeMap.at(dest_vector[0]);
+                auto src_id = static_cast<ElementID>(std::stoi(src_vector[1]));
+                auto dest_id = static_cast<ElementID>(std::stoi(dest_vector[1]));
+                if (src_type == NodeType::RAMP and dest_type == NodeType::WORKER) {
+                    auto src_iterator = new_factory.find_ramp_by_id(src_id);
+                    auto dest_iterator = new_factory.find_worker_by_id(dest_id);
+                    src_iterator->receiver_preferences_.add_receiver(&(*dest_iterator));
+                }
+                if (src_type == NodeType::RAMP and dest_type == NodeType::STORE) {
+                    auto src_iterator = new_factory.find_ramp_by_id(src_id);
+                    auto dest_iterator = new_factory.find_storehouse_by_id(dest_id);
+                    src_iterator->receiver_preferences_.add_receiver(&(*dest_iterator));
+                }
+                if (src_type == NodeType::WORKER and dest_type == NodeType::WORKER) {
+                    auto src_iterator = new_factory.find_worker_by_id(src_id);
+                    auto dest_iterator = new_factory.find_worker_by_id(dest_id);
+                    src_iterator->receiver_preferences_.add_receiver(&(*dest_iterator));
+                }
+                if (src_type == NodeType::WORKER and dest_type == NodeType::STORE) {
+                    auto src_iterator = new_factory.find_worker_by_id(src_id);
+                    auto dest_iterator = new_factory.find_storehouse_by_id(dest_id);
+                    src_iterator->receiver_preferences_.add_receiver(&(*dest_iterator));
+                }
             }
         }
     }
-
-    return factory;
+    return new_factory;
 }
 
-std::string queue_type_str(PackageQueueType package_queue_type) {
-    switch(package_queue_type) {
-        case FIFO:
-            return "FIFO";
-        case LIFO:
-            return "LIFO";
-    }
-    return {};
-}
-
-void link_stream_fill(std::stringstream& link_stream, const PackageSender& package_sender, ElementID package_sender_id, std::string&& package_sender_name) {
-    auto prefs = package_sender.receiver_preferences_.get_preferences();
-
-    std::for_each(prefs.cbegin(), prefs.cend(), [&](const std::pair<IPackageReceiver*, double>& key_value) {
-        link_stream << "LINK src=" << package_sender_name << "-" << package_sender_id << " ";
-        const IPackageReceiver* package_receiver = key_value.first;
-        ReceiverType receiver_type = package_receiver->get_receiver_type();
-
-        std::string receiver_type_str = receiver_type == ReceiverType::WORKER ? "worker" : "store";
-
-        link_stream << "dest=" << receiver_type_str << "-" << package_receiver->get_id() << '\n';
-        std::cout << link_stream.str();
+void save_factory_structure(Factory& factory, std::ostream& os){
+    os << "; == LOADING RAMPS ==" << std::endl << std::endl;
+    std::for_each(factory.ramp_cbegin(),factory.ramp_cend(),[&os](const Ramp& ramp){
+        os<<"LOADING_RAMP id="<<ramp.get_id()<<" delivery-interval="<<ramp.get_delivery_interval()<<std::endl;
     });
-}
-
-void save_factory_structure(Factory& factory, std::ostream& os) {
-    
-
-    std::stringstream link_stream;
-
-    std::for_each(factory.ramp_cbegin(), factory.ramp_cend(), [&](const Ramp& ramp) {
-        ElementID ramp_id = ramp.get_id();
-        os << "LOADING_RAMP id=" << ramp_id << ' '
-           << "delivery-interval=" << ramp.get_delivery_interval() << '\n';
-
-        link_stream_fill(link_stream, ramp, ramp_id, "ramp");
+    os<<std::endl<<"; == WORKERS =="<<std::endl<<std::endl;
+    std::for_each(factory.worker_cbegin(),factory.worker_cend(),[&os](const Worker& worker){
+        std::string queue_type;
+        switch (worker.get_queue()->get_queue_type()){
+            case PackageQueueType::FIFO: {
+                queue_type="FIFO";
+                break;
+            }
+            case PackageQueueType::LIFO: {
+                queue_type="LIFO";
+                break;
+            }
+        }
+        os<<"WORKER id="<<worker.get_id()<<" processing-time="<<worker.get_processing_duration()<<" queue-type="<<queue_type<<std::endl;
     });
-
-    std::for_each(factory.worker_cbegin(), factory.worker_cend(), [&](const Worker& worker) {
-        PackageQueueType queue_type = worker.get_queue()->get_queue_type();
-        ElementID worker_id = worker.get_id();
-        os << "WORKER id=" << worker_id << ' '
-           << "processing-time=" << worker.get_processing_duration() << ' '
-           << "queue-type=" << queue_type_str(queue_type) << '\n';
-
-        link_stream_fill(link_stream, worker, worker_id, "worker");
+    os<<std::endl<<"; == STOREHOUSES =="<<std::endl<<std::endl;
+    std::for_each(factory.storehouse_cbegin(),factory.storehouse_cend(),[&os](const Storehouse& storehouse){
+        os<<"STOREHOUSE id="<<storehouse.get_id()<<std::endl;
     });
-
-    std::for_each(factory.storehouse_cbegin(), factory.storehouse_cend(), [&](const Storehouse& storehouse) {
-        os << "STOREHOUSE id=" << storehouse.get_id() << '\n';
+    os<<std::endl<<"; == LINKS =="<<std::endl<<std::endl;
+    std::for_each(factory.ramp_cbegin(),factory.ramp_cend(),[&os](const Ramp& ramp){
+        for(auto& preferences : ramp.receiver_preferences_.get_preferences()){
+            IPackageReceiver* receiver_ptr = preferences.first;
+            switch(receiver_ptr->get_receiver_type()){
+                case ReceiverType::WORKER: {
+                    os<<"LINK src=ramp-"<<ramp.get_id()<<" dest=worker-"<<receiver_ptr->get_id()<<std::endl;
+                    break;
+                }
+                case ReceiverType::STOREHOUSE: {
+                    os<<"LINK src=ramp-"<<ramp.get_id()<<" dest=store-"<<receiver_ptr->get_id()<<std::endl;
+                    break;
+                }
+            }
+        }
+        os<<std::endl;
     });
-
-    os << link_stream.str();
-
+    std::for_each(factory.worker_cbegin(),factory.worker_cend(),[&os](const Worker& worker){
+        for(auto& preferences : worker.receiver_preferences_.get_preferences()){
+            IPackageReceiver* receiver_ptr = preferences.first;
+            switch(receiver_ptr->get_receiver_type()){
+                case ReceiverType::WORKER: {
+                    os<<"LINK src=worker-"<<worker.get_id()<<" dest=worker-"<<receiver_ptr->get_id()<<std::endl;
+                    break;
+                }
+                case ReceiverType::STOREHOUSE: {
+                    os<<"LINK src=worker-"<<worker.get_id()<<" dest=store-"<<receiver_ptr->get_id()<<std::endl;
+                    break;
+                }
+            }
+        }
+        os<<std::endl;
+    });
     os.flush();
 }
